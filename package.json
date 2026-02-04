@@ -54,6 +54,9 @@
     "ora": "^8.0.1",
     "twitter-api-v2": "^1.15.0"
   },
+  "optionalDependencies": {
+    "playwright": "^1.40.0"
+  },
   "devDependencies": {
     "@types/node": "^20.10.0",
     "rimraf": "^5.0.5",

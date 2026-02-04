@@ -10,10 +10,12 @@ import chalk from 'chalk';
 import ora from 'ora';
 import Conf from 'conf';
 import { XSafePost, XSafeConfig, SafetySettings } from './index.js';
+import { browserPost } from './browser.js';
 
 const config = new Conf<{
   credentials?: XSafeConfig['credentials'];
   safety?: SafetySettings;
+  mode?: 'api' | 'browser';
 }>({
   projectName: 'x-safe-post',
 });
@@ -31,11 +33,12 @@ program
 
 program
   .command('config')
-  .description('Configure X API credentials')
+  .description('Configure X API credentials or browser mode')
   .option('--app-key <key>', 'X API App Key')
   .option('--app-secret <secret>', 'X API App Secret')
   .option('--access-token <token>', 'X API Access Token')
   .option('--access-secret <secret>', 'X API Access Secret')
+  .option('--mode <mode>', 'Posting mode: api or browser', 'api')
   .option('--min-interval <minutes>', 'Minimum minutes between posts', '30')
   .option('--max-daily <count>', 'Maximum posts per day', '8')
   .option('--quiet-start <hour>', 'Quiet hours start (0-23)', '23')
@@ -46,15 +49,24 @@ program
     if (options.show) {
       const creds = config.get('credentials');
       const safety = config.get('safety') || {};
+      const mode = config.get('mode') || 'api';
       
       console.log(chalk.bold('\n📋 Current Configuration\n'));
       
-      if (creds) {
-        console.log(chalk.green('✓ Credentials configured'));
-        console.log(`  App Key: ${creds.appKey.slice(0, 8)}...`);
-        console.log(`  Access Token: ${creds.accessToken.slice(0, 8)}...`);
+      console.log(chalk.bold('Mode:'), mode === 'browser' ? chalk.cyan('browser (no API keys)') : 'api');
+      console.log();
+      
+      if (mode === 'api') {
+        if (creds) {
+          console.log(chalk.green('✓ API Credentials configured'));
+          console.log(`  App Key: ${creds.appKey.slice(0, 8)}...`);
+          console.log(`  Access Token: ${creds.accessToken.slice(0, 8)}...`);
+        } else {
+          console.log(chalk.red('✗ API Credentials not configured'));
+        }
       } else {
-        console.log(chalk.red('✗ Credentials not configured'));
+        console.log(chalk.cyan('ℹ Browser mode - uses logged-in Chrome session'));
+        console.log(chalk.dim('  Make sure you\'re logged into x.com in Chrome'));
       }
       
       console.log(chalk.bold('\n⚙️  Safety Settings'));
@@ -96,6 +108,12 @@ program
       safety.enableJitter = false;
     }
 
+    // Save mode
+    if (options.mode && (options.mode === 'api' || options.mode === 'browser')) {
+      config.set('mode', options.mode);
+      console.log(chalk.green(`✓ Mode set to: ${options.mode}`));
+    }
+
     config.set('safety', safety);
     console.log(chalk.green('✓ Settings saved'));
   });
@@ -109,10 +127,47 @@ program
   .description('Post a tweet with safety checks')
   .option('-r, --reply-to <tweetId>', 'Reply to a tweet')
   .option('-q, --quote <tweetId>', 'Quote a tweet')
+  .option('-i, --image <path>', 'Attach an image')
   .option('-f, --force', 'Skip safety checks (not recommended)')
   .option('-w, --wait', 'Wait if delayed instead of returning')
+  .option('-b, --browser', 'Force browser mode (no API keys)')
   .option('--dry-run', 'Check safety without posting')
   .action(async (text, options) => {
+    const mode = options.browser ? 'browser' : (config.get('mode') || 'api');
+    
+    // Browser mode - use browser automation
+    if (mode === 'browser') {
+      const spinner = ora('Posting via browser...').start();
+      
+      try {
+        const replyUrl = options.replyTo 
+          ? `https://x.com/i/status/${options.replyTo}` 
+          : undefined;
+        
+        const result = await browserPost({
+          text,
+          imagePath: options.image,
+          replyToUrl: replyUrl,
+        });
+        
+        spinner.stop();
+        
+        if (result.success) {
+          console.log(chalk.green('\n✓ Posted via browser!'));
+          console.log(chalk.dim(`  Method: ${result.method}`));
+        } else {
+          console.log(chalk.red(`\n✗ Browser post failed: ${result.error}`));
+        }
+        console.log();
+        return;
+      } catch (error: any) {
+        spinner.stop();
+        console.error(chalk.red(`\n✗ Browser error: ${error.message}\n`));
+        process.exit(1);
+      }
+    }
+    
+    // API mode
     const client = getClient();
     if (!client) return;
 
