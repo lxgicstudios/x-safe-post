@@ -68,5 +68,12 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "bugs": {
+    "url": "https://github.com/lxgicstudios/x-safe-post/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/lxgicstudios"
   }
 }
